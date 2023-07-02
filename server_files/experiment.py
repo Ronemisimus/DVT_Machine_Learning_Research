@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import tqdm
 import pickle
+import ast
 
 def real(column):
     # usually we wan't to keep it the same 
@@ -21,6 +22,38 @@ def cat_single(df:pd.DataFrame):
         ).codes
     return df
 
+def cat_test_one_hot(df:pd.DataFrame,values, field):
+    df = df.astype('str')
+    columns_names = []
+    columns = []
+    data = df.to_numpy()
+    
+    for val in values:
+        col_name = field + "." + val
+        columns_names.append(col_name)
+        col_data = np.zeros(shape=data.shape[0]).astype(np.uint8)
+        col_data[np.sum(data==val,axis=-1) != 0] += 1
+        columns.append(col_data)
+    
+    data = np.stack(columns)
+    res = pd.DataFrame(data=data.transpose(),columns=columns_names)
+    return res
+
+def create_category_dictionary():
+    # read the encoding_dict.cvs 
+    # and return dictionary
+    # key (encoding_id) value(dictionary of encoding possible values)
+
+    dict = {}
+    encodings = pd.read_csv("encoding_dict.csv",sep="\t")
+    for i in range(len(encodings.index)):
+        sub_dict = {}
+        str_of_encoding_values = '[' + encodings.values[i][1][1:-1] + ']'
+        list_of_encoding_values = ast.literal_eval(str_of_encoding_values)
+        dict[str(encodings.values[i][0])] = np.array(list_of_encoding_values,dtype=str)
+
+    return dict
+
 def cat_multiple(df:pd.DataFrame):
     # for now we'll do the same
     df = df.fillna("<empty>").astype('str')
@@ -39,8 +72,8 @@ def Integer(s):
 
 type_func_dict = {
     "Integer":Integer,
-    "Categorical (single)":cat_single,
-    "Categorical (multiple)":cat_multiple,
+    "Categorical (single)":cat_test_one_hot,
+    "Categorical (multiple)":cat_test_one_hot,
     "Continuous":real
 }
 
@@ -48,8 +81,9 @@ def load_desired_fields():
     fields = pd.read_csv("field_list.csv")
     field_names = fields['field_id'].to_numpy().astype(np.int64).flatten()
     field_types = fields['value_type'].to_numpy().astype(str).flatten()
+    field_encodings = fields['encoding_id'].to_numpy().astype(str).flatten()
     del fields
-    return field_names, field_types
+    return field_names, field_types, field_encodings
 
 def final_columns(field_names):
     positive = pd.read_csv('instance_0_positive.csv',nrows=1)
@@ -78,7 +112,7 @@ def create_mixed_dataset(selected_cols):
 
 def prepare_data(exp_name):
     # get desired field list
-    field_names, field_types = load_desired_fields()
+    field_names, field_types, field_encodings = load_desired_fields()
 
     # build final field list including instances and arrays...
     selected_cols = final_columns(field_names)
@@ -94,7 +128,7 @@ def prepare_data(exp_name):
 
     # build final field to type dictionary
     field_groups = {}
-    for f, t in tqdm.tqdm(zip(field_names,field_types), total=len(field_names)):
+    for f, t, e in tqdm.tqdm(zip(field_names,field_types,field_encodings), total=len(field_names)):
         # we wan't to avoid changing the final label
         if f != 6152:
             res = []
@@ -102,18 +136,19 @@ def prepare_data(exp_name):
             for col in cols:
                 if col.startswith(f):
                     res.append(col)
-            field_groups[f] = (res,type_func_dict[t])
+            field_groups[f] = (res,type_func_dict[t], e)
 
     print("done with type matching")
 
+    # build dict of encoding values
+    enc_dict = create_category_dictionary()
+
     # copy chunks while cleaning dtypes
     for i,chunk in enumerate(dataset):
-        for field, (res,clean_func) in tqdm.tqdm(field_groups.items(),desc=f"chunk {i+1}/1"):
-            if clean_func in [cat_single, cat_multiple]:
-                for col in res:
-                    if chunk[col].dtype == int:
-                        chunk[col] = chunk[col].astype(float)
-            chunk[res] = clean_func(chunk[res])
+        for field, (res,clean_func, enoding_id) in tqdm.tqdm(field_groups.items(),desc=f"chunk {i+1}/1"):
+            clean_data = clean_func(chunk[res], enc_dict[enoding_id], str(field))
+            chunk.drop(columns=res, inplace=True)
+            # need to add the clean_data to chunk
         chunk[cols].to_csv('shuffled_dataset_clean.csv',mode='a',header=False,index=False)
 
     # if all works this will print only number and float dtypes
