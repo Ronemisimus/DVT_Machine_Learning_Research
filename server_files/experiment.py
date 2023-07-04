@@ -149,6 +149,9 @@ def prepare_data(exp_name):
             clean_data = clean_func(chunk[res], enc_dict[enoding_id], str(field))
             chunk.drop(columns=res, inplace=True)
             # need to add the clean_data to chunk
+            chunk[clean_data.columns.values] = clean_data
+            # done
+            
         chunk[cols].to_csv('shuffled_dataset_clean.csv',mode='a',header=False,index=False)
 
     # if all works this will print only number and float dtypes
