@@ -4,7 +4,7 @@ import tqdm
 import pickle
 import ast
 
-def real(column):
+def real(column, values, field):
     # usually we wan't to keep it the same 
     # but might want to normallize it 
     return column.fillna(0)
@@ -22,18 +22,26 @@ def cat_single(df:pd.DataFrame):
         ).codes
     return df
 
-def cat_test_one_hot(df:pd.DataFrame,values, field):
-    df = df.astype('str')
+def cat_test_one_hot(df:pd.DataFrame,values:np.ndarray, field):
+
+    # problem with int values... '1.0' != '1'
+    try:
+        values = values.astype(int)
+        df = df.astype(float)
+    except ValueError:
+        df = df.astype('str')
     columns_names = []
     columns = []
     data = df.to_numpy()
     
     for val in values:
-        col_name = field + "." + val
+        if val.dtype == int:
+            val = int(val)
+        col_name = field + str(val)
         columns_names.append(col_name)
-        col_data = np.zeros(shape=data.shape[0]).astype(np.uint8)
-        col_data[np.sum(data==val,axis=-1) != 0] += 1
-        columns.append(col_data)
+        col_data = (np.sum(data==val,axis=-1) != 0).astype(np.uint8)
+        if np.sum(col_data)>= 0.005 * col_data.shape[0]:
+            columns.append(col_data)
     
     data = np.stack(columns)
     res = pd.DataFrame(data=data.transpose(),columns=columns_names)
@@ -66,7 +74,7 @@ def cat_multiple(df:pd.DataFrame):
         ).codes
     return df
 
-def Integer(s):
+def Integer(s, values, field):
     # for now an integer is fine
     return s.fillna(0).astype(np.int64)
 
@@ -145,14 +153,16 @@ def prepare_data(exp_name):
 
     # copy chunks while cleaning dtypes
     for i,chunk in enumerate(dataset):
-        for field, (res,clean_func, enoding_id) in tqdm.tqdm(field_groups.items(),desc=f"chunk {i+1}/1"):
-            clean_data = clean_func(chunk[res], enc_dict[enoding_id], str(field))
+        res_cols = []
+        for i, (field, (res,clean_func, encoding_id)) in enumerate(tqdm.tqdm(field_groups.items(),desc=f"chunk {i+1}/1")):
+            clean_data = clean_func(chunk[res], enc_dict.get(encoding_id, []), str(field))
             chunk.drop(columns=res, inplace=True)
-            # need to add the clean_data to chunk
+            """ # need to add the clean_data to chunk
             chunk[clean_data.columns.values] = clean_data
-            # done
-            
-        chunk[cols].to_csv('shuffled_dataset_clean.csv',mode='a',header=False,index=False)
+            # done """
+            res_cols.append(clean_data)
+        chunk = pd.concat(res_cols,axis=1)
+        chunk.to_csv('shuffled_dataset_clean.csv',mode='a',header=False,index=False)
 
     # if all works this will print only number and float dtypes
     print(np.unique(chunk.dtypes))
