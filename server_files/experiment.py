@@ -3,41 +3,63 @@ import numpy as np
 import tqdm
 import pickle
 import ast
+import datetime
+import logging
+def showwarning(message, category, filename, lineno, file=None, line=None):
+    pass
+import warnings
+warnings.showwarning = showwarning
+from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import normalize
+from matplotlib import pyplot as plt
 
-def real(column):
+# hyper params
+# hyper params
+
+
+def real(column, values, field):
     # usually we wan't to keep it the same 
     # but might want to normallize it 
     return column.fillna(0)
 
-def cat_single(df:pd.DataFrame):
-    # this makes categorial data become numerical
-    # codes of each category
-    df = df.fillna("<empty>").astype('str')
-    all_categories = sorted(np.unique(df.to_numpy()))
 
-    for col in df.columns:
-        df[col] = pd.Categorical(
-            df[col], 
-            categories=all_categories
-        ).codes
-    return df
+def cat_one_hot(df:pd.DataFrame,values:np.ndarray, field):
+    ######
+    # turn a categorical to one hot
+    ######
 
-def cat_test_one_hot(df:pd.DataFrame,values, field):
-    df = df.astype('str')
-    columns_names = []
-    columns = []
-    data = df.to_numpy()
-    
-    for val in values:
-        col_name = field + "." + val
-        columns_names.append(col_name)
-        col_data = np.zeros(shape=data.shape[0]).astype(np.uint8)
-        col_data[np.sum(data==val,axis=-1) != 0] += 1
-        columns.append(col_data)
-    
-    data = np.stack(columns)
-    res = pd.DataFrame(data=data.transpose(),columns=columns_names)
+
+    ######
+    # try to turn values to int if there is an exception then
+    # try to turn data to int(cuz it's float and the values are in str(but in int format)) and after that to str if there is an exception 
+    # turn data to str witout turning to int first (dataframe only turn values to float when they are only numerical)
+    ######
+    try:
+        values = values.astype(int)
+        enc = MultiLabelBinarizer(classes=values)
+        data = df.to_numpy()
+        data = enc.fit_transform(data.astype(np.float32))
+    except ValueError:
+        # 1.0 != 1
+        df = df.fillna("<empty>").astype('str')
+        enc = MultiLabelBinarizer(classes=values)
+        data = df.to_numpy()
+        data = enc.fit_transform(data)
+
+    columns_names = np.array([field + '.' + str(val) for val in values])
+    sum_of_col_appearance = np.sum(data, axis=0)
+
+    ######
+    # the number here could be adjusted (0.005)
+    ######
+    mask = sum_of_col_appearance >= len(data)/len(values)*len(columns_names)*0.005
+
+    data = data[:,mask]
+    columns_names = columns_names[mask]
+    res = pd.DataFrame(data=data,columns=columns_names)
     return res
+
 
 def create_category_dictionary():
     # read the encoding_dict.cvs 
@@ -54,26 +76,14 @@ def create_category_dictionary():
 
     return dict
 
-def cat_multiple(df:pd.DataFrame):
-    # for now we'll do the same
-    df = df.fillna("<empty>").astype('str')
-    all_categories = sorted(np.unique(df.to_numpy()))
-
-    for col in df.columns:
-        df[col] = pd.Categorical(
-            df[col], 
-            categories=all_categories
-        ).codes
-    return df
-
-def Integer(s):
+def Integer(s, values, field):
     # for now an integer is fine
     return s.fillna(0).astype(np.int64)
 
 type_func_dict = {
     "Integer":Integer,
-    "Categorical (single)":cat_test_one_hot,
-    "Categorical (multiple)":cat_test_one_hot,
+    "Categorical (single)":cat_one_hot,
+    "Categorical (multiple)":cat_one_hot,
     "Continuous":real
 }
 
@@ -123,8 +133,12 @@ def prepare_data(exp_name):
     # create a clean dataset with clean datatypes
     dataset = pd.read_csv('shuffled_dataset_first_itter.csv', chunksize=20130, low_memory=False)
     cols = dataset.get_chunk(0).columns
-    s_chunk = pd.DataFrame(columns=cols)
-    s_chunk.to_csv('shuffled_dataset_clean.csv',index=False,mode='w')
+
+    #####
+    # these lines were removed here, added after cleaning the data
+    # s_chunk = pd.DataFrame(columns=cols)
+    # s_chunk.to_csv('shuffled_dataset_clean.csv',index=False,mode='w')
+    #####
 
     # build final field to type dictionary
     field_groups = {}
@@ -132,9 +146,9 @@ def prepare_data(exp_name):
         # we wan't to avoid changing the final label
         if f != 6152:
             res = []
-            f = str(f)+"-"
+            f = str(f)
             for col in cols:
-                if col.startswith(f):
+                if col.startswith(f + '-'):
                     res.append(col)
             field_groups[f] = (res,type_func_dict[t], e)
 
@@ -145,11 +159,38 @@ def prepare_data(exp_name):
 
     # copy chunks while cleaning dtypes
     for i,chunk in enumerate(dataset):
-        for field, (res,clean_func, enoding_id) in tqdm.tqdm(field_groups.items(),desc=f"chunk {i+1}/1"):
-            clean_data = clean_func(chunk[res], enc_dict[enoding_id], str(field))
+        res_cols = []
+        for i, (field, (res,clean_func, encoding_id)) in enumerate(tqdm.tqdm(field_groups.items(),desc=f"chunk {i+1}/1")):
+            clean_data = clean_func(chunk[res], enc_dict.get(encoding_id, []), str(field))
             chunk.drop(columns=res, inplace=True)
-            # need to add the clean_data to chunk
-        chunk[cols].to_csv('shuffled_dataset_clean.csv',mode='a',header=False,index=False)
+            if not clean_data.empty:
+                res_cols.append(clean_data)
+
+        
+        ######
+        # Added the 6152 here 
+        # there should be a better way to add the 6152 but fuck it
+        res = []
+        for col in cols:
+                if col.startswith('6152-'):
+                    res.append(col)
+        res_cols.append(chunk[res])
+        ######
+
+        chunk = pd.concat(res_cols,axis=1)
+
+        ######
+        # Added the columns here since the old way we added the coulmns without the name change 
+        # i.e 41202-0.0 if categorical became 41202-.Z450
+        # and the old way would have 41202-0.0 as a col and not 41202-.Z450
+        # again there should be a better way to add this but fuck it
+        cols = chunk.columns
+        s_chunk = pd.DataFrame(columns=cols)
+        s_chunk.to_csv('shuffled_dataset_clean.csv',index=False,mode='w')
+        ######
+
+        chunk.to_csv('shuffled_dataset_clean.csv',mode='a',header=False,index=False)
+        logging.info("shuffled_dataset_clean.csv is created")
 
     # if all works this will print only number and float dtypes
     print(np.unique(chunk.dtypes))
@@ -170,25 +211,41 @@ def load_data(exp_name):
     return X,Y, x_cols
 
 def experiment(exp_name,remake_dataset):
+    #####
+    # basically just added a logging system to keep my sanity
+    # add a folder named logs otherwise this will crash
+    #####
+
+    logging.basicConfig(filename='logs/'+ exp_name + "__" + str(datetime.datetime.now())
+                        +".log", encoding = 'utf-8', level=logging.DEBUG)
+    logging.info("start: " + str(datetime.datetime.now()))
+
     if remake_dataset:
+        logging.info("remake dataset")
         prepare_data(exp_name)
     X,Y, x_cols = load_data(exp_name)
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import normalize
+
+    logging.info("loaded data")
     clf = LogisticRegression(penalty='l1',solver='liblinear',max_iter=200,verbose=True)
     train_limit = X.shape[0]*7//10
+    logging.info("before fit")
     clf.fit(X[:train_limit],Y[:train_limit])
+    logging.info("after fit")
+
     test_score = clf.score(X[train_limit:],Y[train_limit:])
     train_score = clf.score(X[:train_limit],Y[:train_limit])
+    logging.info("test score :" + str(test_score))
+    logging.info("train score :" + str(train_score))
+    logging.info("end: " + str(datetime.datetime.now()))
     print(train_score, test_score)
+
     s = pickle.dumps(clf)
-    with open(exp_name+".pkl",'wb') as f_out:
+    with open('logs/'+ exp_name+".pkl",'wb') as f_out:
         f_out.write(s)
 
     return clf, x_cols
 
-def plot_fields(x_cols, weights, important_weight_num):
-    from matplotlib import pyplot as plt
+def plot_fields(exp_name, x_cols, weights, important_weight_num):
     data = sorted(zip(x_cols, weights),key=lambda x: x[1],reverse=True)
     sorted_x_cols = [x[0] for x in data]
     weights = [x[1] for x in data]
@@ -202,4 +259,6 @@ def plot_fields(x_cols, weights, important_weight_num):
         ),height=0.5)
     plt.xlabel("lan(1+|weight|)")
     plt.ylabel("field")
+    plt.savefig('logs/'+ exp_name + "__" + str(datetime.datetime.now())
+                + "__" +'weights.png',bbox_inches = 'tight')
     plt.show()
