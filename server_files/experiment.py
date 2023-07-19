@@ -13,90 +13,24 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import normalize
 from matplotlib import pyplot as plt
+from fields_and_encodings import Fields, Encodings
+from type_functions import TypeFunctions
 
 # hyper params
 # hyper params
 
 
-def real(column, values, field):
-    # usually we wan't to keep it the same 
-    # but might want to normallize it 
-    return column.fillna(0)
-
-
-def cat_one_hot(df:pd.DataFrame,values:np.ndarray, field):
-    ######
-    # turn a categorical to one hot
-    ######
-
-
-    ######
-    # try to turn values to int if there is an exception then
-    # try to turn data to int(cuz it's float and the values are in str(but in int format)) and after that to str if there is an exception 
-    # turn data to str witout turning to int first (dataframe only turn values to float when they are only numerical)
-    ######
-    try:
-        values = values.astype(int)
-        enc = MultiLabelBinarizer(classes=values)
-        data = df.to_numpy()
-        data = enc.fit_transform(data.astype(np.float32))
-    except ValueError:
-        # 1.0 != 1
-        df = df.fillna("<empty>").astype('str')
-        enc = MultiLabelBinarizer(classes=values)
-        data = df.to_numpy()
-        data = enc.fit_transform(data)
-
-    columns_names = np.array([field + '.' + str(val) for val in values])
-    sum_of_col_appearance = np.sum(data, axis=0)
-
-    ######
-    # the number here could be adjusted (0.005)
-    ######
-    mask = sum_of_col_appearance >= len(data)/len(values)*len(columns_names)*0.005
-
-    data = data[:,mask]
-    columns_names = columns_names[mask]
-    res = pd.DataFrame(data=data,columns=columns_names)
-    return res
-
-
-def create_category_dictionary():
-    # read the encoding_dict.cvs 
-    # and return dictionary
-    # key (encoding_id) value(dictionary of encoding possible values)
-
-    dict = {}
-    encodings = pd.read_csv("encoding_dict.csv",sep="\t")
-    for i in range(len(encodings.index)):
-        sub_dict = {}
-        str_of_encoding_values = '[' + encodings.values[i][1][1:-1] + ']'
-        list_of_encoding_values = ast.literal_eval(str_of_encoding_values)
-        dict[str(encodings.values[i][0])] = np.array(list_of_encoding_values,dtype=str)
-
-    return dict
-
-def Integer(s, values, field):
-    # for now an integer is fine
-    return s.fillna(0).astype(np.int64)
 
 type_func_dict = {
-    "Integer":Integer,
-    "Categorical (single)":cat_one_hot,
-    "Categorical (multiple)":cat_one_hot,
-    "Continuous":real
+    "Integer": TypeFunctions.Integer,
+    "Categorical (single)": TypeFunctions.cat_one_hot,
+    "Categorical (multiple)": TypeFunctions.cat_one_hot,
+    "Continuous": TypeFunctions.real
 }
 
-def load_desired_fields():
-    fields = pd.read_csv("field_list.csv")
-    field_names = fields['field_id'].to_numpy().astype(np.int64).flatten()
-    field_types = fields['value_type'].to_numpy().astype(str).flatten()
-    field_encodings = fields['encoding_id'].to_numpy().astype(str).flatten()
-    del fields
-    return field_names, field_types, field_encodings
 
 def final_columns(field_names):
-    positive = pd.read_csv('instance_0_positive.csv',nrows=1)
+    positive = pd.read_csv('csv/instance_0_positive.csv',nrows=1)
     selected_cols = [
         col 
         for field in field_names 
@@ -107,22 +41,22 @@ def final_columns(field_names):
     return selected_cols
 
 def create_mixed_dataset(selected_cols):
-    positive = pd.read_csv('instance_0_positive.csv',usecols=selected_cols,chunksize=1000,low_memory=False)
-    negative = pd.read_csv('all_instance_negative.csv',usecols=selected_cols,chunksize=1000,low_memory=False)
+    positive = pd.read_csv('csv/instance_0_positive.csv',usecols=selected_cols,chunksize=1000,low_memory=False)
+    negative = pd.read_csv('csv/all_instance_negative.csv',usecols=selected_cols,chunksize=1000,low_memory=False)
 
     cols = positive.get_chunk(0).columns
     print(len(cols))
     s_chunk = pd.DataFrame(columns=cols)
-    s_chunk.to_csv('shuffled_dataset_first_itter.csv',index=False,mode='w')
+    s_chunk.to_csv('csv/shuffled_dataset_first_itter.csv',index=False,mode='w')
     for p_chunk, n_chunk in tqdm.tqdm(zip(positive,negative), total=11):
         s_chunk = pd.concat([p_chunk,n_chunk]).sample(frac=1)
-        s_chunk[cols].to_csv('shuffled_dataset_first_itter.csv',mode='a',header=False,index=False)
+        s_chunk[cols].to_csv('csv/shuffled_dataset_first_itter.csv',mode='a',header=False,index=False)
     del positive,negative, p_chunk, s_chunk, n_chunk
 
 
 def prepare_data(exp_name):
     # get desired field list
-    field_names, field_types, field_encodings = load_desired_fields()
+    field_names, field_types, field_encodings = Fields.load_desired_fields()
 
     # build final field list including instances and arrays...
     selected_cols = final_columns(field_names)
@@ -131,14 +65,8 @@ def prepare_data(exp_name):
     create_mixed_dataset(selected_cols)
 
     # create a clean dataset with clean datatypes
-    dataset = pd.read_csv('shuffled_dataset_first_itter.csv', chunksize=20130, low_memory=False)
+    dataset = pd.read_csv('csv/shuffled_dataset_first_itter.csv', chunksize=20130, low_memory=False)
     cols = dataset.get_chunk(0).columns
-
-    #####
-    # these lines were removed here, added after cleaning the data
-    # s_chunk = pd.DataFrame(columns=cols)
-    # s_chunk.to_csv('shuffled_dataset_clean.csv',index=False,mode='w')
-    #####
 
     # build final field to type dictionary
     field_groups = {}
@@ -155,7 +83,7 @@ def prepare_data(exp_name):
     print("done with type matching")
 
     # build dict of encoding values
-    enc_dict = create_category_dictionary()
+    enc_dict = Encodings.create_category_dictionary()
 
     # copy chunks while cleaning dtypes
     for i,chunk in enumerate(dataset):
@@ -165,7 +93,6 @@ def prepare_data(exp_name):
             chunk.drop(columns=res, inplace=True)
             if not clean_data.empty:
                 res_cols.append(clean_data)
-
         
         ######
         # Added the 6152 here 
@@ -186,10 +113,10 @@ def prepare_data(exp_name):
         # again there should be a better way to add this but fuck it
         cols = chunk.columns
         s_chunk = pd.DataFrame(columns=cols)
-        s_chunk.to_csv('shuffled_dataset_clean.csv',index=False,mode='w')
+        s_chunk.to_csv('csv/shuffled_dataset_clean.csv',index=False,mode='w')
         ######
 
-        chunk.to_csv('shuffled_dataset_clean.csv',mode='a',header=False,index=False)
+        chunk.to_csv('csv/shuffled_dataset_clean.csv',mode='a',header=False,index=False)
         logging.info("shuffled_dataset_clean.csv is created")
 
     # if all works this will print only number and float dtypes
@@ -197,15 +124,15 @@ def prepare_data(exp_name):
 
 def load_data(exp_name):
     # seperate x and y fields
-    dataset = pd.read_csv('shuffled_dataset_clean.csv', nrows=1)
+    dataset = pd.read_csv('csv/shuffled_dataset_clean.csv', nrows=1)
 
     # 6152 is the field we want to predict
     y_cols = [col for col in dataset.columns if col.startswith("6152-")]
     x_cols = [col for col in dataset.columns if not col.startswith("6152-")]
     
-    dataset = pd.read_csv('shuffled_dataset_clean.csv', usecols=x_cols)
+    dataset = pd.read_csv('csv/shuffled_dataset_clean.csv', usecols=x_cols)
     X = dataset.to_numpy()
-    dataset = pd.read_csv('shuffled_dataset_clean.csv', usecols=y_cols)
+    dataset = pd.read_csv('csv/shuffled_dataset_clean.csv', usecols=y_cols)
     Y = np.sum(dataset[y_cols].to_numpy()==5,axis=-1)!=0
     
     return X,Y, x_cols
