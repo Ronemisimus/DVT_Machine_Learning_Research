@@ -7,25 +7,8 @@ class TypeFunctions:
     
     def real(column:pd.DataFrame, values, field, train_size):
         # fill nulls with 0
-        column = column.fillna(0)
-        
-        # save column names
-        names = column.columns
+        return column.fillna(0)
 
-        if len(names) > 0:
-            # train sacler on train data only
-            s = StandardScaler()
-            column_train = s.fit_transform(column.head(train_size))
-            
-            # scale test data with train parameters
-            column_test = s.transform(column.tail(len(column)-train_size))
-
-            # concat test after train
-            data = np.concatenate([column_train, column_test])
-
-            return pd.DataFrame(data,columns=names)
-        else:
-            return column
 
     def cat_one_hot(df:pd.DataFrame,values:np.ndarray, field, train_size):
         ######
@@ -62,24 +45,48 @@ class TypeFunctions:
         res = pd.DataFrame(data=data,columns=columns_names)
         return res
 
+
     def Integer(column:pd.DataFrame, values, field, train_size):
         # fill nulls with 0
-        column = column.fillna(0).astype(np.int64)
-        
-        # save column names
-        names = column.columns
+        return column.fillna(0).astype(np.int64)
 
-        if len(names) > 0:
-            # train sacler on train data only
-            s = StandardScaler()
-            column_train = s.fit_transform(column.head(train_size))
-            
-            # scale test data with train parameters
-            column_test = s.transform(column.tail(len(column)-train_size))
 
-            # concat test after train
-            data = np.concatenate([column_train, column_test])
+type_func_dict = {
+    "Integer": TypeFunctions.Integer,
+    "Categorical (single)": TypeFunctions.cat_one_hot,
+    "Categorical (multiple)": TypeFunctions.cat_one_hot,
+    "Continuous": TypeFunctions.real
+}
 
-            return pd.DataFrame(data,columns=names)
+
+class ColumnCleaner:
+    def __init__(self, column_names, field_type, field_values, field_name):
+        self.column_names = column_names
+        self.field_type = field_type
+        self.field_values = field_values
+        if self.field_type not in ['Categorical (single)', 'Categorical (multiple)'] and \
+            len(self.column_names)>0:
+            self.scaler = StandardScaler()
         else:
-            return column
+            self.scaler = None
+        self.field_name = field_name
+    
+    def fit_transform(self, df:pd.DataFrame, train_size):
+        df = type_func_dict[self.field_type](df, self.field_values, str(self.field_name), len(df))
+        if self.scaler:
+            names = df.columns
+            df_train = self.scaler.fit_transform(df.head(train_size))
+            df_test = self.scaler.transform(df.tail(len(df)-train_size))
+            df = np.concatenate([df_train, df_test])
+            df = pd.DataFrame(df,columns=names)
+        return df
+    
+    def transform(self, df:pd.DataFrame, train_size):
+        df = type_func_dict[self.field_type](df, self.field_values, str(self.field_name), 0)
+        if self.scaler:
+            names = df.columns
+            df_test = self.scaler.transform(df.tail(len(df)-train_size))
+            df_train = df.head(train_size).to_numpy()
+            df = np.concatenate([df_train, df_test])
+            df = pd.DataFrame(df,columns=names)
+        return df
