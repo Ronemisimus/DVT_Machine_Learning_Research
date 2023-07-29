@@ -41,6 +41,7 @@ def final_columns(field_names):
     return selected_cols
 
 def create_mixed_dataset(selected_cols):
+    row_num = 0
     positive = pd.read_csv('csv/instance_0_positive.csv',usecols=selected_cols,chunksize=1000,low_memory=False)
     negative = pd.read_csv('csv/all_instance_negative.csv',usecols=selected_cols,chunksize=1000,low_memory=False)
 
@@ -50,8 +51,10 @@ def create_mixed_dataset(selected_cols):
     s_chunk.to_csv('csv/shuffled_dataset_first_itter.csv',index=False,mode='w')
     for p_chunk, n_chunk in tqdm.tqdm(zip(positive,negative), total=11):
         s_chunk = pd.concat([p_chunk,n_chunk]).sample(frac=1)
+        row_num += s_chunk.shape[0]
         s_chunk[cols].to_csv('csv/shuffled_dataset_first_itter.csv',mode='a',header=False,index=False)
     del positive,negative, p_chunk, s_chunk, n_chunk
+    return row_num
 
 
 def prepare_data(exp_name):
@@ -62,11 +65,15 @@ def prepare_data(exp_name):
     selected_cols = final_columns(field_names)
 
     # build final dataset from positive and negative with only needed columns
-    create_mixed_dataset(selected_cols)
+    row_num = create_mixed_dataset(selected_cols)
 
     # create a clean dataset with clean datatypes
-    dataset = pd.read_csv('csv/shuffled_dataset_first_itter.csv', chunksize=20130, low_memory=False)
+    dataset = pd.read_csv('csv/shuffled_dataset_first_itter.csv', chunksize=row_num, low_memory=False)
     cols = dataset.get_chunk(0).columns
+
+    # claculate train and test set seperation point
+    # the dataset is already shuffled so the seperation point is constant
+    train_size = row_num * 7 // 10
 
     # build final field to type dictionary
     field_groups = {}
@@ -89,7 +96,7 @@ def prepare_data(exp_name):
     for i,chunk in enumerate(dataset):
         res_cols = []
         for i, (field, (res,clean_func, encoding_id)) in enumerate(tqdm.tqdm(field_groups.items(),desc=f"chunk {i+1}/1")):
-            clean_data = clean_func(chunk[res], enc_dict.get(encoding_id, []), str(field))
+            clean_data = clean_func(chunk[res], enc_dict.get(encoding_id, []), str(field), train_size)
             chunk.drop(columns=res, inplace=True)
             if not clean_data.empty:
                 res_cols.append(clean_data)

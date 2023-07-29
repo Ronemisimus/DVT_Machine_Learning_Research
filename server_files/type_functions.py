@@ -1,15 +1,33 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.preprocessing import StandardScaler
 
 class TypeFunctions:
     
-    def real(column, values, field):
-        # usually we wan't to keep it the same 
-        # but might want to normallize it 
-        return column.fillna(0)
+    def real(column:pd.DataFrame, values, field, train_size):
+        # fill nulls with 0
+        column = column.fillna(0)
+        
+        # save column names
+        names = column.columns
 
-    def cat_one_hot(df:pd.DataFrame,values:np.ndarray, field):
+        if len(names) > 0:
+            # train sacler on train data only
+            s = StandardScaler()
+            column_train = s.fit_transform(column.head(train_size))
+            
+            # scale test data with train parameters
+            column_test = s.transform(column.tail(len(column)-train_size))
+
+            # concat test after train
+            data = np.concatenate([column_train, column_test])
+
+            return pd.DataFrame(data,columns=names)
+        else:
+            return column
+
+    def cat_one_hot(df:pd.DataFrame,values:np.ndarray, field, train_size):
         ######
         # turn a categorical to one hot
         ######
@@ -44,6 +62,24 @@ class TypeFunctions:
         res = pd.DataFrame(data=data,columns=columns_names)
         return res
 
-    def Integer(s, values, field):
-        # for now an integer is fine
-        return s.fillna(0).astype(np.int64)
+    def Integer(column:pd.DataFrame, values, field, train_size):
+        # fill nulls with 0
+        column = column.fillna(0).astype(np.int64)
+        
+        # save column names
+        names = column.columns
+
+        if len(names) > 0:
+            # train sacler on train data only
+            s = StandardScaler()
+            column_train = s.fit_transform(column.head(train_size))
+            
+            # scale test data with train parameters
+            column_test = s.transform(column.tail(len(column)-train_size))
+
+            # concat test after train
+            data = np.concatenate([column_train, column_test])
+
+            return pd.DataFrame(data,columns=names)
+        else:
+            return column
