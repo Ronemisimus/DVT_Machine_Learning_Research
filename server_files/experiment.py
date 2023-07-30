@@ -183,7 +183,7 @@ def experiment(exp_name,remake_dataset):
     output_to_log_and_terminal("test score :" + str(test_score))
     output_to_log_and_terminal("train score :" + str(train_score))
     output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
-    output_to_log_and_terminal("train score: " + str(train_score) + "test score: " + str(test_score))
+    output_to_log_and_terminal("train score: " + str(train_score) + " test score: " + str(test_score))
 
     s = pickle.dumps(clf)
     with open('logs/'+ exp_name+".pkl",'wb') as f_out:
@@ -195,6 +195,7 @@ def plot_fields(exp_name, x_cols, weights, important_weight_num):
     data = sorted(zip(x_cols, weights),key=lambda x: x[1],reverse=True)
     sorted_x_cols = [x[0] for x in data]
     weights = [x[1] for x in data]
+    fig = plt.figure(figsize=(40,40))
     plt.barh(
         sorted_x_cols[:important_weight_num],
         np.log(
