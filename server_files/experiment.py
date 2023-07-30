@@ -64,7 +64,32 @@ def map_fields_to_cleaners(field_names, field_types, field_encodings, selected_c
                 if col.startswith(f + '-'):
                     res.append(col)
             field_groups[f] = ColumnCleaner(res, t, enc_dict.get(e, []), f)
-    return field_groups
+    return list(field_groups.values())
+
+def activate_cleaners(dataset, cleaners, selected_cols, train_size):
+    ######
+    # Added the 6152 here 
+    # there should be a better way to add the 6152 but fuck it
+    y_cols = []
+    for col in selected_cols:
+            if col.startswith('6152-'):
+                y_cols.append(col)
+    ######
+
+    # copy chunks while cleaning dtypes
+    for i,chunk in enumerate(dataset):
+        res_cols = []
+        for cleaner in tqdm.tqdm(cleaners,desc=f"chunk {i+1}/1"):
+            clean_data = cleaner.fit_transform(chunk[cleaner.column_names], train_size)
+            chunk.drop(columns=cleaner.column_names, inplace=True)
+            if not clean_data.empty:
+                res_cols.append(clean_data)
+
+        res_cols.append(chunk[y_cols])
+        chunk = pd.concat(res_cols,axis=1)
+        chunk.to_csv('csv/shuffled_dataset_clean.csv',mode='w',header=True,index=False)
+    return chunk.dtypes
+
 
 
 def prepare_data(exp_name):
@@ -99,47 +124,17 @@ def prepare_data(exp_name):
     enc_dict = Encodings.create_category_dictionary()
 
     # build final field to type dictionary
-    field_groups = map_fields_to_cleaners(field_names, field_types, field_encodings, selected_cols, enc_dict)
+    cleaners = map_fields_to_cleaners(field_names, field_types, field_encodings, selected_cols, enc_dict)
 
     output_to_log_and_terminal("done with type matching")
 
-    # copy chunks while cleaning dtypes
-    for i,chunk in enumerate(dataset):
-        res_cols = []
-        for cleaner in tqdm.tqdm(field_groups.values(),desc=f"chunk {i+1}/1"):
-            clean_data = cleaner.fit_transform(chunk[cleaner.column_names], train_size)
-            chunk.drop(columns=cleaner.column_names, inplace=True)
-            if not clean_data.empty:
-                res_cols.append(clean_data)
-        
-        ######
-        # Added the 6152 here 
-        # there should be a better way to add the 6152 but fuck it
-        res = []
-        for col in selected_cols:
-                if col.startswith('6152-'):
-                    res.append(col)
-        res_cols.append(chunk[res])
-        ######
+    type_list = activate_cleaners(dataset,cleaners,selected_cols,train_size)
 
-        chunk = pd.concat(res_cols,axis=1)
-
-        ######
-        # Added the columns here since the old way we added the coulmns without the name change 
-        # i.e 41202-0.0 if categorical became 41202-.Z450
-        # and the old way would have 41202-0.0 as a col and not 41202-.Z450
-        # again there should be a better way to add this but fuck it
-        cols = chunk.columns
-        s_chunk = pd.DataFrame(columns=cols)
-        s_chunk.to_csv('csv/shuffled_dataset_clean.csv',index=False,mode='w')
-        ######
-
-        chunk.to_csv('csv/shuffled_dataset_clean.csv',mode='a',header=False,index=False)
-        logging.info("shuffled_dataset_clean.csv is created")
+    output_to_log_and_terminal("shuffled_dataset_clean.csv is created")
 
     # if all works this will print only number and float dtypes
-    print(np.unique(chunk.dtypes))
-    return list(field_groups.values())
+    print(np.unique(type_list).tolist())
+    return cleaners
 
 def load_data(exp_name):
     # seperate x and y fields
@@ -176,19 +171,19 @@ def experiment(exp_name,remake_dataset):
         np.save(exp_name+"_cleaner_list",cleaner_list,allow_pickle=True)
     X,Y, x_cols, cleaner_list = load_data(exp_name)
 
-    logging.info("loaded data")
+    output_to_log_and_terminal("loaded data")
     clf = LogisticRegression(penalty='l1',solver='liblinear',max_iter=200,verbose=True)
     train_limit = X.shape[0]*7//10
-    logging.info("before fit")
+    output_to_log_and_terminal("before fit")
     clf.fit(X[:train_limit],Y[:train_limit])
-    logging.info("after fit")
+    output_to_log_and_terminal("after fit")
 
     test_score = clf.score(X[train_limit:],Y[train_limit:])
     train_score = clf.score(X[:train_limit],Y[:train_limit])
-    logging.info("test score :" + str(test_score))
-    logging.info("train score :" + str(train_score))
-    logging.info("end: " + str(datetime.datetime.now()))
-    print(train_score, test_score)
+    output_to_log_and_terminal("test score :" + str(test_score))
+    output_to_log_and_terminal("train score :" + str(train_score))
+    output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
+    output_to_log_and_terminal("train score: " + str(train_score) + "test score: " + str(test_score))
 
     s = pickle.dumps(clf)
     with open('logs/'+ exp_name+".pkl",'wb') as f_out:
