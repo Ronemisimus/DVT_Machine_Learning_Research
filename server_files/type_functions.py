@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.preprocessing import StandardScaler
+from fields_and_encodings import Encodings
 
 class TypeFunctions:
     
@@ -20,6 +21,9 @@ class TypeFunctions:
         # try to turn data to int(cuz it's float and the values are in str(but in int format)) and after that to str if there is an exception 
         # turn data to str witout turning to int first (dataframe only turn values to float when they are only numerical)
         ######
+        
+        values = Encodings.remove_unwanted_values(field, values)
+
         try:
             values = values.astype(int)
             enc = MultiLabelBinarizer(classes=values)
