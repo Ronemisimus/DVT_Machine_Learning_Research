@@ -183,7 +183,6 @@ def experiment(exp_name,remake_dataset):
     output_to_log_and_terminal("test score :" + str(test_score))
     output_to_log_and_terminal("train score :" + str(train_score))
     output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
-    output_to_log_and_terminal("train score: " + str(train_score) + " test score: " + str(test_score))
 
     s = pickle.dumps(clf)
     with open('logs/'+ exp_name+".pkl",'wb') as f_out:
