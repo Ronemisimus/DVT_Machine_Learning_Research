@@ -1,15 +1,17 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.preprocessing import StandardScaler
+from fields_and_encodings import Encodings
 
 class TypeFunctions:
     
-    def real(column, values, field):
-        # usually we wan't to keep it the same 
-        # but might want to normallize it 
+    def real(column:pd.DataFrame, values, field, train_size):
+        # fill nulls with 0
         return column.fillna(0)
 
-    def cat_one_hot(df:pd.DataFrame,values:np.ndarray, field):
+
+    def cat_one_hot(df:pd.DataFrame,values:np.ndarray, field, train_size):
         ######
         # turn a categorical to one hot
         ######
@@ -19,6 +21,9 @@ class TypeFunctions:
         # try to turn data to int(cuz it's float and the values are in str(but in int format)) and after that to str if there is an exception 
         # turn data to str witout turning to int first (dataframe only turn values to float when they are only numerical)
         ######
+        
+        values = Encodings.remove_unwanted_values(field, values)
+
         try:
             values = values.astype(int)
             enc = MultiLabelBinarizer(classes=values)
@@ -44,6 +49,48 @@ class TypeFunctions:
         res = pd.DataFrame(data=data,columns=columns_names)
         return res
 
-    def Integer(s, values, field):
-        # for now an integer is fine
-        return s.fillna(0).astype(np.int64)
+
+    def Integer(column:pd.DataFrame, values, field, train_size):
+        # fill nulls with 0
+        return column.fillna(0).astype(np.int64)
+
+
+type_func_dict = {
+    "Integer": TypeFunctions.Integer,
+    "Categorical (single)": TypeFunctions.cat_one_hot,
+    "Categorical (multiple)": TypeFunctions.cat_one_hot,
+    "Continuous": TypeFunctions.real
+}
+
+
+class ColumnCleaner:
+    def __init__(self, column_names, field_type, field_values, field_name):
+        self.column_names = column_names
+        self.field_type = field_type
+        self.field_values = field_values
+        if self.field_type not in ['Categorical (single)', 'Categorical (multiple)'] and \
+            len(self.column_names)>0:
+            self.scaler = StandardScaler()
+        else:
+            self.scaler = None
+        self.field_name = field_name
+    
+    def fit_transform(self, df:pd.DataFrame, train_size):
+        df = type_func_dict[self.field_type](df, self.field_values, str(self.field_name), len(df))
+        if self.scaler:
+            names = df.columns
+            df_train = self.scaler.fit_transform(df.head(train_size))
+            df_test = self.scaler.transform(df.tail(len(df)-train_size))
+            df = np.concatenate([df_train, df_test])
+            df = pd.DataFrame(df,columns=names)
+        return df
+    
+    def transform(self, df:pd.DataFrame, train_size):
+        df = type_func_dict[self.field_type](df, self.field_values, str(self.field_name), 0)
+        if self.scaler:
+            names = df.columns
+            df_test = self.scaler.transform(df.tail(len(df)-train_size))
+            df_train = df.head(train_size).to_numpy()
+            df = np.concatenate([df_train, df_test])
+            df = pd.DataFrame(df,columns=names)
+        return df
