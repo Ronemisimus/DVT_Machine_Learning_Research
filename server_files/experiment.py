@@ -12,6 +12,7 @@ warnings.showwarning = showwarning
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import normalize
+from sklearn.ensemble import GradientBoostingClassifier 
 from matplotlib import pyplot as plt
 from fields_and_encodings import Fields, Encodings
 from type_functions import TypeFunctions
@@ -172,6 +173,44 @@ def experiment(exp_name,remake_dataset):
 
     return clf, x_cols
 
+
+def experimentXgBoost(exp_name,remake_dataset):
+    #####
+    # basically just added a logging system to keep my sanity
+    # add a folder named logs otherwise this will crash
+    #####
+
+    logging.basicConfig(filename='logs/'+ exp_name + "__" + str(datetime.datetime.now())
+                        +".log", encoding = 'utf-8', level=logging.DEBUG)
+    
+    output_to_log_and_terminal("start: " + str(datetime.datetime.now()))
+
+    cleaner_list = []
+    if remake_dataset:
+        output_to_log_and_terminal("remake dataset")
+        cleaner_list = prepare_data(exp_name)
+        np.save(exp_name+"_cleaner_list",cleaner_list,allow_pickle=True)
+    X,Y, x_cols, cleaner_list = load_data(exp_name)
+
+    output_to_log_and_terminal("loaded data")
+    clf = GradientBoostingClassifier(verbose=2,n_iter_no_change=10)
+    train_limit = X.shape[0]*7//10
+    output_to_log_and_terminal("before fit")
+    clf.fit(X[:train_limit],Y[:train_limit])
+    output_to_log_and_terminal("after fit")
+
+    test_score = clf.score(X[train_limit:],Y[train_limit:])
+    train_score = clf.score(X[:train_limit],Y[:train_limit])
+    output_to_log_and_terminal("test score :" + str(test_score))
+    output_to_log_and_terminal("train score :" + str(train_score))
+    output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
+
+    s = pickle.dumps(clf)
+    with open('logs/'+ exp_name+".pkl",'wb') as f_out:
+        f_out.write(s)
+
+    return clf, x_cols
+
 def plot_fields(exp_name, x_cols, weights, important_weight_num):
     data = sorted(zip(x_cols, weights),key=lambda x: x[1],reverse=True)
     sorted_x_cols = [x[0] for x in data]
@@ -189,3 +228,19 @@ def plot_fields(exp_name, x_cols, weights, important_weight_num):
     plt.savefig('logs/'+ exp_name + "__" + str(datetime.datetime.now())
                 + "__" +'weights.png',bbox_inches = 'tight')
     plt.show()
+
+def plot_XGBoost(exp_name, x_cols, weights, important_weight_num):
+    data = sorted(zip(x_cols, weights),key=lambda x: x[1],reverse=True)
+    sorted_x_cols = [x[0] for x in data]
+    weights = [x[1] for x in data]
+    # fig = plt.figure(figsize=(40,40))
+    plt.barh(
+        sorted_x_cols[:important_weight_num],
+        weights[:important_weight_num],
+        height=0.5)
+    plt.xlabel("weight")
+    plt.ylabel("field")
+    plt.savefig('logs/'+ exp_name + "__" + str(datetime.datetime.now())
+                + "__" +'weights.png',bbox_inches = 'tight')
+    plt.show()
+
