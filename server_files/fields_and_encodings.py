@@ -73,7 +73,7 @@ class Encodings:
         return dictionary
 
 
-    def add_values_to_unwanted_valuse_file(field, value, reason = None):
+    def add_values_to_unwanted_valuse_file(field, value, reason):
         # add to unwanted_values.csv the field and value
         # if unwanted_values.csv doesn't exists then create file then add
 
@@ -99,8 +99,7 @@ class Encodings:
             else:
                 list_of_encoding_values.add(value)
                 unwanted_values.at[index[0],'value'] = list_of_encoding_values
-                if reason:
-                    unwanted_values.at[index[0],'reason'] = unwanted_values.at[index[0],'reason'] + ', ' + reason
+                unwanted_values.at[index[0],'reason'] = unwanted_values.at[index[0],'reason'] + ', ' + reason
                 unwanted_values.to_csv("csv/unwanted_values.csv", index=False)
         else:
             unwanted_values.loc[len(unwanted_values)+1] = [field, {value},reason]
@@ -124,4 +123,3 @@ class Encodings:
             values = [val for val in values if not val in list_of_unwanted_encoding_values]
         
         return np.array(values,dtype=str)
-    

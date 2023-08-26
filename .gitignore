@@ -1,2 +1,5 @@
 # Dont save csv
 *.csv
+*.png
+.vscode
+local_tests.ipynb
