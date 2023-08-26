@@ -9,9 +9,9 @@ def showwarning(message, category, filename, lineno, file=None, line=None):
     pass
 import warnings
 warnings.showwarning = showwarning
-from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.metrics import classification_report
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import normalize
+from sklearn.linear_model._base import LinearModel
 from sklearn.ensemble import GradientBoostingClassifier 
 from matplotlib import pyplot as plt
 from fields_and_encodings import Fields, Encodings
@@ -184,6 +184,7 @@ def experiment(exp_name,remake_dataset):
     output_to_log_and_terminal("test score :" + str(test_score))
     output_to_log_and_terminal("train score :" + str(train_score))
     output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
+    show_classification_report(clf, X, Y, train_limit)
 
     s = pickle.dumps(clf)
     with open('logs/'+ exp_name+".pkl",'wb') as f_out:
@@ -222,6 +223,7 @@ def experimentXgBoost(exp_name,remake_dataset):
     output_to_log_and_terminal("test score :" + str(test_score))
     output_to_log_and_terminal("train score :" + str(train_score))
     output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
+    show_classification_report(clf, X, Y, train_limit)
 
     s = pickle.dumps(clf)
     with open('logs/'+ exp_name+".pkl",'wb') as f_out:
@@ -247,6 +249,15 @@ def plot_fields(exp_name, x_cols, weights, important_weight_num):
     plt.savefig('logs/'+ exp_name + "__" + str(datetime.datetime.now())
                 + "__" +'weights.png',bbox_inches = 'tight')
     plt.show()
+
+def show_classification_report(clf:LinearModel, X:np.ndarray, Y:np.ndarray, train_limit:int):
+    test_y = Y[train_limit:]
+    test_y = np.array(["dvt" if yi else "no dvt" for yi in test_y])
+    test_x = clf.predict(X[train_limit:])
+    test_x = np.array(["dvt" if xi else "no dvt" for xi in test_x])
+    output_to_log_and_terminal(classification_report(test_y, 
+                                                    test_x, 
+                                                    labels=["no dvt", "dvt"]))
 
 def plot_XGBoost(exp_name, x_cols, weights, important_weight_num):
     data = sorted(zip(x_cols, weights),key=lambda x: x[1],reverse=True)
