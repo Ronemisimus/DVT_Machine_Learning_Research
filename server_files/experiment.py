@@ -9,13 +9,20 @@ def showwarning(message, category, filename, lineno, file=None, line=None):
     pass
 import warnings
 warnings.showwarning = showwarning
-from sklearn.metrics import classification_report
+from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model._base import LinearModel
+from sklearn.preprocessing import normalize
 from sklearn.ensemble import GradientBoostingClassifier 
 from matplotlib import pyplot as plt
 from fields_and_encodings import Fields, Encodings
 from type_functions import TypeFunctions, ColumnCleaner    
+
+from sklearn.cluster import DBSCAN
+from sklearn.cluster import KMeans
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
+from tabulate import tabulate
 
 # hyper params
 # hyper params
@@ -97,12 +104,12 @@ def prepare_data(exp_name):
     # get desired field list
     field_names, field_types, field_encodings = Fields.load_desired_fields()
 
-    output_to_log_and_terminal("loaded desired fields")
+    #output_to_log_and_terminal("loaded desired fields")
 
     # build final field list including instances and arrays...
     selected_cols = table_columns(field_names)
 
-    output_to_log_and_terminal("loaded resulting table columns")
+    #output_to_log_and_terminal("loaded resulting table columns")
 
     # build final dataset from positive and negative with only needed columns
     row_num = create_mixed_dataset(selected_cols)
@@ -111,12 +118,12 @@ def prepare_data(exp_name):
     # the dataset is already shuffled so the seperation point is constant
     train_size = row_num * 7 // 10
 
-    output_to_log_and_terminal(
+    """ output_to_log_and_terminal(
         "created mixed dataset, row count: " + 
         str(row_num) + 
         " train size: " + 
         str(train_size)
-    )
+    ) """
 
     # create a clean dataset with clean datatypes
     dataset = pd.read_csv('csv/shuffled_dataset_first_itter.csv',chunksize=row_num, low_memory=False)
@@ -127,14 +134,14 @@ def prepare_data(exp_name):
     # build final field to type dictionary
     cleaners = map_fields_to_cleaners(field_names, field_types, field_encodings, selected_cols, enc_dict)
 
-    output_to_log_and_terminal("done with type matching")
+    #output_to_log_and_terminal("done with type matching")
 
     type_list = activate_cleaners(dataset,cleaners,selected_cols,train_size)
 
-    output_to_log_and_terminal("shuffled_dataset_clean.csv is created")
+    #output_to_log_and_terminal("shuffled_dataset_clean.csv is created")
 
     # if all works this will print only number and float dtypes
-    print(np.unique(type_list).tolist())
+    #print(np.unique(type_list).tolist())
     return cleaners
 
 def load_data(exp_name):
@@ -150,11 +157,64 @@ def load_data(exp_name):
     dataset = pd.read_csv('csv/shuffled_dataset_clean.csv', usecols=y_cols)
     Y = np.sum(dataset[y_cols].to_numpy()==5,axis=-1)!=0
     
-    cleaner_list = np.load(exp_name+"_cleaner_list.npy", allow_pickle=True)
+    cleaner_list = np.load("logs/"+exp_name+"_cleaner_list.npy", allow_pickle=True)
 
     return X,Y, x_cols, cleaner_list
 
-def experiment(exp_name,remake_dataset):
+def experiment(exp_name,remake_dataset, cluster:bool):
+    #####
+    # basically just added a logging system to keep my sanity
+    # add a folder named logs otherwise this will crash
+    #####
+
+    logging.basicConfig(filename='logs/'+ exp_name + "__" + str(datetime.datetime.now())
+                        +".log", encoding = 'utf-8', level=logging.DEBUG)
+    
+    output_to_log_and_terminal("start: " + str(datetime.datetime.now()))
+
+    cleaner_list = []
+    if remake_dataset:
+        #output_to_log_and_terminal("remake dataset")
+        cleaner_list = prepare_data(exp_name)
+        np.save("logs/"+exp_name+"_cleaner_list.npy",cleaner_list,allow_pickle=True)
+    X,Y, x_cols, cleaner_list = load_data(exp_name)
+
+
+    ### clustering
+    # dbscan = DBSCAN(eps=0.5, min_samples=5)  
+    # cluster_labels = dbscan.fit_predict(X)
+
+    train_limit = X.shape[0]*7//10
+
+    if cluster:
+        Xtrain, Ytrain = clusterData(X[:train_limit], Y[:train_limit], 3000)
+    else:
+        Xtrain, Ytrain = X[:train_limit], Y[:train_limit]
+
+    # Xtrain = X[:train_limit]
+    # Ytrain = Y[:train_limit]
+
+    output_to_log_and_terminal("loaded data")
+    clf = LogisticRegression()
+    output_to_log_and_terminal("before fit")
+    clf.fit(Xtrain, Ytrain)
+    output_to_log_and_terminal("after fit")
+
+    test_score = clf.score(X[train_limit:], Y[train_limit:])
+    train_score = clf.score(Xtrain, Ytrain)
+    output_to_log_and_terminal("test score :" + str(test_score))
+    output_to_log_and_terminal("train score :" + str(train_score))
+    classification_report_pretty_print(Y[train_limit:], clf.predict(X[train_limit:]))
+    output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
+
+    s = pickle.dumps(clf)
+    with open('logs/'+ exp_name+".pkl",'wb') as f_out:
+        f_out.write(s)
+
+    return clf, x_cols
+
+
+def experimentXgBoost(exp_name,remake_dataset, cluster:bool):
     #####
     # basically just added a logging system to keep my sanity
     # add a folder named logs otherwise this will crash
@@ -169,22 +229,29 @@ def experiment(exp_name,remake_dataset):
     if remake_dataset:
         output_to_log_and_terminal("remake dataset")
         cleaner_list = prepare_data(exp_name)
-        np.save(exp_name+"_cleaner_list",cleaner_list,allow_pickle=True)
+        np.save("logs/"+exp_name+"_cleaner_list",cleaner_list,allow_pickle=True)
     X,Y, x_cols, cleaner_list = load_data(exp_name)
 
-    output_to_log_and_terminal("loaded data")
-    clf = LogisticRegression(penalty='l1',solver='liblinear',max_iter=200,verbose=True)
     train_limit = X.shape[0]*7//10
+
+    if cluster:
+        Xtrain, Ytrain = clusterData(X[:train_limit], Y[:train_limit], 3000)
+    else:
+        Xtrain, Ytrain = X[:train_limit], Y[:train_limit]
+    # Xtrain = X[:train_limit]
+    # Ytrain = Y[:train_limit]
+    output_to_log_and_terminal("loaded data")
+    clf = GradientBoostingClassifier(n_iter_no_change=10)
     output_to_log_and_terminal("before fit")
-    clf.fit(X[:train_limit],Y[:train_limit])
+    clf.fit(Xtrain, Ytrain)
     output_to_log_and_terminal("after fit")
 
-    test_score = clf.score(X[train_limit:],Y[train_limit:])
-    train_score = clf.score(X[:train_limit],Y[:train_limit])
+    test_score = clf.score(X[train_limit:], Y[train_limit:])
+    train_score = clf.score(Xtrain, Ytrain)
     output_to_log_and_terminal("test score :" + str(test_score))
     output_to_log_and_terminal("train score :" + str(train_score))
+    classification_report_pretty_print(Y[train_limit:], clf.predict(X[train_limit:]))
     output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
-    show_classification_report(clf, X, Y, train_limit)
 
     s = pickle.dumps(clf)
     with open('logs/'+ exp_name+".pkl",'wb') as f_out:
@@ -192,50 +259,32 @@ def experiment(exp_name,remake_dataset):
 
     return clf, x_cols
 
+def classification_report_pretty_print(Y_true:np.ndarray, Y_pred:np.ndarray):
+    # Compute the classification report
+    report = classification_report(Y_true, Y_pred, target_names=['healthy', 'sick'])
 
-def experimentXgBoost(exp_name,remake_dataset):
-    #####
-    # basically just added a logging system to keep my sanity
-    # add a folder named logs otherwise this will crash
-    #####
+    # Split the report into lines and format it as a table
+    report_table = [line.split() for line in report.split('\n')[2:-5]]
 
-    logging.basicConfig(filename='logs/'+ exp_name + "__" + str(datetime.datetime.now())
-                        +".log", encoding = 'utf-8', level=logging.DEBUG)
-    
-    output_to_log_and_terminal("start: " + str(datetime.datetime.now()))
+    # Print the nicely formatted table
+    output_to_log_and_terminal(tabulate(report_table, headers=['Class', 'Precision', 'Recall', 'F1-Score', 'Support'], tablefmt='grid'))
 
-    cleaner_list = []
-    if remake_dataset:
-        output_to_log_and_terminal("remake dataset")
-        cleaner_list = prepare_data(exp_name)
-        np.save(exp_name+"_cleaner_list",cleaner_list,allow_pickle=True)
-    X,Y, x_cols, cleaner_list = load_data(exp_name)
-
-    output_to_log_and_terminal("loaded data")
-    clf = GradientBoostingClassifier(verbose=2,n_iter_no_change=10)
-    train_limit = X.shape[0]*7//10
-    output_to_log_and_terminal("before fit")
-    clf.fit(X[:train_limit],Y[:train_limit])
-    output_to_log_and_terminal("after fit")
-
-    test_score = clf.score(X[train_limit:],Y[train_limit:])
-    train_score = clf.score(X[:train_limit],Y[:train_limit])
-    output_to_log_and_terminal("test score :" + str(test_score))
-    output_to_log_and_terminal("train score :" + str(train_score))
-    output_to_log_and_terminal("end: " + str(datetime.datetime.now()))
-    show_classification_report(clf, X, Y, train_limit)
-
-    s = pickle.dumps(clf)
-    with open('logs/'+ exp_name+".pkl",'wb') as f_out:
-        f_out.write(s)
-
-    return clf, x_cols
-
-def plot_fields(exp_name, x_cols, weights, important_weight_num):
+def plot_fields(exp_name, x_cols, weights, important_weight_num, remove_zero:bool=False):
     data = sorted(zip(x_cols, weights),key=lambda x: x[1],reverse=True)
     sorted_x_cols = [x[0] for x in data]
     weights = [x[1] for x in data]
-    # fig = plt.figure(figsize=(40,40))
+
+    if remove_zero:
+        for col, weight in data:
+            if weight == 0:
+                dotIndx = col.find('.')
+                dashIndx = col.find('-')
+                if dashIndx < dotIndx and dashIndx != -1:
+                    Fields.add_field_to_unwanted_fields_file(int(col[:dashIndx]),"Zero weight")
+                else:
+                    Encodings.add_values_to_unwanted_valuse_file(int(col[:dotIndx]),col[dotIndx+1:],"Zero weight")
+
+    #fig = plt.figure(figsize=(40,40))
     plt.barh(
         sorted_x_cols[:important_weight_num],
         np.log(
@@ -250,19 +299,20 @@ def plot_fields(exp_name, x_cols, weights, important_weight_num):
                 + "__" +'weights.png',bbox_inches = 'tight')
     plt.show()
 
-def show_classification_report(clf:LinearModel, X:np.ndarray, Y:np.ndarray, train_limit:int):
-    test_y = Y[train_limit:]
-    test_y = np.array(["dvt" if yi else "no dvt" for yi in test_y])
-    test_x = clf.predict(X[train_limit:])
-    test_x = np.array(["dvt" if xi else "no dvt" for xi in test_x])
-    output_to_log_and_terminal(classification_report(test_y, 
-                                                    test_x, 
-                                                    labels=["no dvt", "dvt"]))
-
-def plot_XGBoost(exp_name, x_cols, weights, important_weight_num):
+def plot_XGBoost(exp_name, x_cols, weights, important_weight_num, remove_zero:bool=False):
     data = sorted(zip(x_cols, weights),key=lambda x: x[1],reverse=True)
     sorted_x_cols = [x[0] for x in data]
     weights = [x[1] for x in data]
+
+    if remove_zero:
+        for col, weight in data:
+            if weight == 0:
+                dotIndx = col.find('.')
+                dashIndx = col.find('-')
+                if dashIndx < dotIndx and dashIndx != -1:
+                    Fields.add_field_to_unwanted_fields_file(int(col[:dashIndx]),"Zero weight")
+                else:
+                    Encodings.add_values_to_unwanted_valuse_file(int(col[:dotIndx]),col[dotIndx+1:],"Zero weight")
     # fig = plt.figure(figsize=(40,40))
     plt.barh(
         sorted_x_cols[:important_weight_num],
@@ -274,3 +324,28 @@ def plot_XGBoost(exp_name, x_cols, weights, important_weight_num):
                 + "__" +'weights.png',bbox_inches = 'tight')
     plt.show()
 
+
+
+def clusterData(X, y, k):
+
+    # Step 1: Cluster the Data
+    kmeans = KMeans(n_clusters=k)
+    cluster_assignments = kmeans.fit_predict(X)
+
+    # Step 2: Extract Cluster Centers (Centroids)
+    cluster_centers = kmeans.cluster_centers_
+
+    # Step 3: Create New Examples (Centers)
+    centers = cluster_centers
+
+    # Step 4: Label the New Examples
+    examples=[]
+    new_example_labels = []
+    for i, center in enumerate(centers):
+        # Calculate the distances from the center to all data points in the cluster
+        distances = np.linalg.norm(X[cluster_assignments == i] - center, axis=1)
+        min_example_index = distances.argmin()
+        examples.append(X[cluster_assignments == i][min_example_index])
+        new_example_labels.append(y[cluster_assignments == i][min_example_index])
+    
+    return np.array(examples), new_example_labels
