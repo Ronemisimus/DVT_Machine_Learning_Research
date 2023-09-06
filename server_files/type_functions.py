@@ -42,10 +42,10 @@ class TypeFunctions:
         ######
         # the number here could be adjusted (0.005)
         ######
-        mask = sum_of_col_appearance >= len(data)/len(values)*len(columns_names)*0.005
-
-        data = data[:,mask]
-        columns_names = columns_names[mask]
+        if len(values)>0:
+            mask = sum_of_col_appearance >= len(data)/len(values)*len(columns_names)*0.005
+            data = data[:,mask]
+            columns_names = columns_names[mask]
         res = pd.DataFrame(data=data,columns=columns_names)
         return res
 
