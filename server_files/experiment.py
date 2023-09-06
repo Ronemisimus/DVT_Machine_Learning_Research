@@ -8,9 +8,7 @@ def showwarning(message, category, filename, lineno, file=None, line=None):
     pass
 import warnings
 warnings.showwarning = showwarning
-from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import normalize
 from sklearn.ensemble import GradientBoostingClassifier 
 from matplotlib import pyplot as plt
 from fields_and_encodings import Fields, Encodings
@@ -216,6 +214,8 @@ def experiment(exp_name,remake_dataset, cluster:bool, block_output:bool=False):
     output_to_log_and_terminal("train score :" + str(train_score), block_output)
     classification_report_pretty_print(Y[train_limit:], clf.predict(X[train_limit:]), block_output)
     output_to_log_and_terminal("end: " + str(datetime.datetime.now()), block_output)
+
+    return clf, x_cols
 
 
 def experimentSVM(exp_name,remake_dataset, cluster:bool, block_output:bool=False, kernel='rbf'):
@@ -451,6 +451,8 @@ def clusterData(X, y, k):
     return np.array(examples), new_example_labels
 
 def remove_data_leakage():
+    Fields.add_field_to_unwanted_fields_file(4022,
+        'leakage: Age pulmonary embolism (blood clot in lung) diagnosed')
     Fields.add_field_to_unwanted_fields_file(135,
         "leakage: Number of non-cancer illness")
     Fields.add_field_to_unwanted_fields_file(4012,
@@ -528,6 +530,17 @@ def remove_data_leakage():
     Encodings.add_values_to_unwanted_valuse_file(41270,value,message)
     Encodings.add_values_to_unwanted_valuse_file(41204,value,message)
     Encodings.add_values_to_unwanted_valuse_file(41202,value,message)
+    message = 'leakage: I269 Pulmonary embolism without mention of acute cor pulmonale'
+    value = 'I269'
+    Encodings.add_values_to_unwanted_valuse_file(41270,value,message)
+    Encodings.add_values_to_unwanted_valuse_file(41204,value,message)
+    Encodings.add_values_to_unwanted_valuse_file(41202,value,message)
+    message = 'leakage: M7986 Other specified soft tissue disorders (Lower leg)'
+    value = 'M7986'
+    Encodings.add_values_to_unwanted_valuse_file(41270,value,message)
+    Encodings.add_values_to_unwanted_valuse_file(41204,value,message)
+    Encodings.add_values_to_unwanted_valuse_file(41202,value,message)
+    
 
     
     
