@@ -216,7 +216,7 @@ def experiment(exp_name,remake_dataset, cluster:bool, block_output:bool=False):
     output_to_log_and_terminal("test score :" + str(test_score), block_output)
     output_to_log_and_terminal("train score :" + str(train_score), block_output)
     classification_report_pretty_print(Y[train_limit:], Ypred, block_output)
-    show_confusion_matrix(Y[train_limit:], Ypred)
+    show_confusion_matrix(Y[train_limit:], Ypred, block_output)
     output_to_log_and_terminal("end: " + str(datetime.datetime.now()), block_output)
 
     return clf, x_cols
@@ -316,7 +316,7 @@ def experimentXgBoost(exp_name,remake_dataset, cluster:bool, block_output:bool=F
     output_to_log_and_terminal("train score :" + str(train_score), block_output)
     f1 = classification_report_pretty_print(Y[train_limit:], Ypred, block_output)
     if ax is not None:
-        plt.scatter(algoParams['n_estimators'], f1, color='red', marker='o')
+        plt.scatter(algoParams['n_estimators'], f1, color='blue', marker='o')
         plt.annotate('depth: '+str(algoParams['max_depth']), (algoParams['n_estimators'], f1), textcoords="offset points", xytext=(10, 10), ha='center')
     show_confusion_matrix(Y[train_limit:], Ypred, block_output)
     output_to_log_and_terminal("end: " + str(datetime.datetime.now()), block_output)
